@@ -12,7 +12,12 @@ const { errorHandler, notFound } = require("./middleware/errorHandler");
 const app = express();
 
 // CORS configuration - hardcoded origins (not from .env)
-const allowedOrigins = ["http://localhost:5173", "http://localhost:3000"];
+const allowedOrigins = [
+  "http://localhost:5173",
+  "http://192.168.1.2:5173",
+  "http://localhost:3000",
+  "http://192.168.1.2:3000",
+];
 
 // Simple CORS configuration
 const corsOptions = {

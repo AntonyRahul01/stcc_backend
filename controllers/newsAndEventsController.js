@@ -3,7 +3,12 @@ const NewsAndEventsImage = require("../models/NewsAndEventsImage");
 const Category = require("../models/Category");
 const logger = require("../utils/logger");
 const { formatResponse } = require("../utils/helpers");
-const { getFileUrl, deleteFile, deleteFiles } = require("../config/upload");
+const {
+  getFileUrl,
+  getRelativePath,
+  deleteFile,
+  deleteFiles,
+} = require("../config/upload");
 const path = require("path");
 
 /**
@@ -64,7 +69,8 @@ module.exports.getAllNewsAndEvents = async (req, res, next) => {
         const images = await NewsAndEventsImage.findByNewsAndEventsId(item.id);
         return {
           ...item,
-          images: images.map((img) => img.image_url),
+          cover_image: getRelativePath(item.cover_image, "cover"),
+          images: images.map((img) => getRelativePath(img.image_url, "news")),
         };
       })
     );
@@ -91,6 +97,134 @@ module.exports.getAllNewsAndEvents = async (req, res, next) => {
 };
 
 /**
+ * Get all active news and events (public endpoint)
+ * GET /api/news-and-events/public
+ * Query params: page, limit, category_id, search, date_from, date_to
+ * Always returns only items with status='active'
+ */
+module.exports.getActiveNewsAndEvents = async (req, res, next) => {
+  try {
+    // Pagination parameters
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const offset = (page - 1) * limit;
+
+    // Validate pagination
+    if (page < 1) {
+      return res
+        .status(400)
+        .json(formatResponse(false, "Page must be greater than 0"));
+    }
+
+    if (limit < 1 || limit > 100) {
+      return res
+        .status(400)
+        .json(formatResponse(false, "Limit must be between 1 and 100"));
+    }
+
+    // Always filter by active status for public endpoint
+    const filters = {
+      category_id: req.query.category_id,
+      status: "active", // Always active for public endpoint
+      search: req.query.search,
+      date_from: req.query.date_from,
+      date_to: req.query.date_to,
+      limit: limit,
+      offset: offset,
+    };
+
+    // Get total count for pagination (without limit/offset)
+    const totalCount = await NewsAndEvents.count({
+      category_id: filters.category_id,
+      status: filters.status,
+      search: filters.search,
+      date_from: filters.date_from,
+      date_to: filters.date_to,
+    });
+
+    // Calculate pagination metadata
+    const totalPages = Math.ceil(totalCount / limit);
+    const hasNext = page < totalPages;
+    const hasPrev = page > 1;
+
+    // Get news and events with pagination
+    const newsAndEvents = await NewsAndEvents.findAll(filters);
+
+    // Get images for each news and events item
+    const newsAndEventsWithImages = await Promise.all(
+      newsAndEvents.map(async (item) => {
+        const images = await NewsAndEventsImage.findByNewsAndEventsId(item.id);
+        return {
+          ...item,
+          cover_image: getRelativePath(item.cover_image, "cover"),
+          images: images.map((img) => getRelativePath(img.image_url, "news")),
+        };
+      })
+    );
+
+    res.json(
+      formatResponse(true, "Active news and events retrieved successfully", {
+        newsAndEvents: newsAndEventsWithImages,
+        pagination: {
+          currentPage: page,
+          totalPages: totalPages,
+          totalItems: totalCount,
+          itemsPerPage: limit,
+          hasNext: hasNext,
+          hasPrev: hasPrev,
+          nextPage: hasNext ? page + 1 : null,
+          prevPage: hasPrev ? page - 1 : null,
+        },
+      })
+    );
+  } catch (error) {
+    logger.error("Get active news and events error:", error);
+    next(error);
+  }
+};
+
+/**
+ * Get active news and events by ID (public endpoint)
+ * GET /api/news-and-events/public/:id
+ * Only returns the item if status is 'active'
+ */
+module.exports.getActiveNewsAndEventsById = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const newsAndEvents = await NewsAndEvents.findById(id);
+
+    if (!newsAndEvents) {
+      return res
+        .status(404)
+        .json(formatResponse(false, "News and events not found"));
+    }
+
+    // Check if the news and events is active
+    if (newsAndEvents.status !== "active") {
+      return res
+        .status(404)
+        .json(formatResponse(false, "News and events not found"));
+    }
+
+    // Get images for the news and events item
+    const images = await NewsAndEventsImage.findByNewsAndEventsId(id);
+
+    res.json(
+      formatResponse(true, "Active news and events retrieved successfully", {
+        newsAndEvents: {
+          ...newsAndEvents,
+          cover_image: getRelativePath(newsAndEvents.cover_image, "cover"),
+          images: images.map((img) => getRelativePath(img.image_url, "news")),
+        },
+      })
+    );
+  } catch (error) {
+    logger.error("Get active news and events by ID error:", error);
+    next(error);
+  }
+};
+
+/**
  * Get news and events by ID
  * GET /api/news-and-events/:id
  */
@@ -112,7 +246,8 @@ module.exports.getNewsAndEventsById = async (req, res, next) => {
       formatResponse(true, "News and events retrieved successfully", {
         newsAndEvents: {
           ...newsAndEvents,
-          images: images.map((img) => img.image_url),
+          cover_image: getRelativePath(newsAndEvents.cover_image, "cover"),
+          images: images.map((img) => getRelativePath(img.image_url, "news")),
         },
       })
     );
@@ -145,13 +280,13 @@ module.exports.createNewsAndEvents = async (req, res, next) => {
       req.files.cover_image &&
       req.files.cover_image.length > 0
     ) {
-      // File was uploaded
+      // File was uploaded - store relative path in database
       const file = req.files.cover_image[0];
       const filePath = path.join("uploads/cover-images", file.filename);
-      coverImageUrl = getFileUrl(req, filePath);
+      coverImageUrl = getRelativePath(filePath, "cover");
     } else if (req.body.cover_image) {
-      // URL was provided
-      coverImageUrl = req.body.cover_image;
+      // URL was provided - convert to relative path if it's a local URL
+      coverImageUrl = getRelativePath(req.body.cover_image, "cover");
     }
 
     // Get created_by from authenticated user
@@ -174,22 +309,26 @@ module.exports.createNewsAndEvents = async (req, res, next) => {
 
     // Check if files were uploaded
     if (req.files && req.files.images && req.files.images.length > 0) {
+      // Files were uploaded - store relative paths in database
       imageUrls = req.files.images.map((file) => {
         const filePath = path.join("uploads/news-images", file.filename);
-        return getFileUrl(req, filePath);
+        return getRelativePath(filePath, "news");
       });
     } else if (req.body.images) {
-      // URLs were provided (can be string or array)
+      // URLs were provided (can be string or array) - convert to relative paths
+      let providedImages = [];
       if (Array.isArray(req.body.images)) {
-        imageUrls = req.body.images;
+        providedImages = req.body.images;
       } else if (typeof req.body.images === "string") {
         // Try to parse if it's a JSON string
         try {
-          imageUrls = JSON.parse(req.body.images);
+          providedImages = JSON.parse(req.body.images);
         } catch {
-          imageUrls = [req.body.images];
+          providedImages = [req.body.images];
         }
       }
+      // Convert each URL to relative path
+      imageUrls = providedImages.map((img) => getRelativePath(img, "news"));
     }
 
     // Add images if provided
@@ -208,7 +347,10 @@ module.exports.createNewsAndEvents = async (req, res, next) => {
       formatResponse(true, "News and events created successfully", {
         newsAndEvents: {
           ...newsAndEvents,
-          images: newsAndEventsImages.map((img) => img.image_url),
+          cover_image: getRelativePath(newsAndEvents.cover_image, "cover"),
+          images: newsAndEventsImages.map((img) =>
+            getRelativePath(img.image_url, "news")
+          ),
         },
       })
     );
@@ -273,10 +415,10 @@ module.exports.updateNewsAndEvents = async (req, res, next) => {
       req.files.cover_image &&
       req.files.cover_image.length > 0
     ) {
-      // File was uploaded - delete old cover image if it exists and is different
+      // File was uploaded - store relative path in database
       const file = req.files.cover_image[0];
       const filePath = path.join("uploads/cover-images", file.filename);
-      newCoverImageUrl = getFileUrl(req, filePath);
+      newCoverImageUrl = getRelativePath(filePath, "cover");
 
       // Delete old cover image if it exists and is different from new one
       if (oldCoverImage && oldCoverImage !== newCoverImageUrl) {
@@ -298,7 +440,7 @@ module.exports.updateNewsAndEvents = async (req, res, next) => {
       }
 
       updateData.cover_image = newCoverImageUrl;
-      logger.info(`New cover image URL: ${updateData.cover_image}`);
+      logger.info(`New cover image path: ${updateData.cover_image}`);
     } else if (updateData.cover_image !== undefined) {
       // Cover image URL provided in body
       if (updateData.cover_image === "" || updateData.cover_image === null) {
@@ -315,12 +457,12 @@ module.exports.updateNewsAndEvents = async (req, res, next) => {
         }
         updateData.cover_image = null;
       } else {
-        // New cover image URL provided
-        newCoverImageUrl = updateData.cover_image;
+        // New cover image URL provided - convert to relative path
+        newCoverImageUrl = getRelativePath(updateData.cover_image, "cover");
         // Delete old cover image if it's different from new one
         if (oldCoverImage && oldCoverImage !== newCoverImageUrl) {
           logger.info(
-            `Cover image URL changed. Deleting old cover image: ${oldCoverImage}`
+            `Cover image changed. Deleting old cover image: ${oldCoverImage}`
           );
           try {
             await deleteFile(oldCoverImage, "cover");
@@ -328,6 +470,7 @@ module.exports.updateNewsAndEvents = async (req, res, next) => {
             logger.error("Error deleting old cover image:", error);
           }
         }
+        updateData.cover_image = newCoverImageUrl;
       }
     }
 
@@ -338,9 +481,10 @@ module.exports.updateNewsAndEvents = async (req, res, next) => {
     // Check if files were uploaded
     if (req.files && req.files.images && req.files.images.length > 0) {
       shouldUpdateImages = true;
+      // Files were uploaded - store relative paths in database
       imageUrls = req.files.images.map((file) => {
         const filePath = path.join("uploads/news-images", file.filename);
-        return getFileUrl(req, filePath);
+        return getRelativePath(filePath, "news");
       });
       logger.info(
         `New images uploaded (${imageUrls.length}): ${JSON.stringify(
@@ -352,14 +496,19 @@ module.exports.updateNewsAndEvents = async (req, res, next) => {
       // URLs were provided or images should be removed
       if (req.body.images === "" || req.body.images === null) {
         imageUrls = [];
-      } else if (Array.isArray(req.body.images)) {
-        imageUrls = req.body.images;
-      } else if (typeof req.body.images === "string") {
-        try {
-          imageUrls = JSON.parse(req.body.images);
-        } catch {
-          imageUrls = [req.body.images];
+      } else {
+        let providedImages = [];
+        if (Array.isArray(req.body.images)) {
+          providedImages = req.body.images;
+        } else if (typeof req.body.images === "string") {
+          try {
+            providedImages = JSON.parse(req.body.images);
+          } catch {
+            providedImages = [req.body.images];
+          }
         }
+        // Convert each URL to relative path
+        imageUrls = providedImages.map((img) => getRelativePath(img, "news"));
       }
       logger.info(
         `New images from body (${imageUrls.length}): ${JSON.stringify(
@@ -466,7 +615,10 @@ module.exports.updateNewsAndEvents = async (req, res, next) => {
       formatResponse(true, "News and events updated successfully", {
         newsAndEvents: {
           ...newsAndEvents,
-          images: newsAndEventsImages.map((img) => img.image_url),
+          cover_image: getRelativePath(newsAndEvents.cover_image, "cover"),
+          images: newsAndEventsImages.map((img) =>
+            getRelativePath(img.image_url, "news")
+          ),
         },
       })
     );

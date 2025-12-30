@@ -111,44 +111,96 @@ const uploadFiles = multer({
   { name: "images", maxCount: 10 },
 ]);
 
-// Helper function to get file URL
+// Helper function to get relative path for database storage
+// Returns format: /cover-images/filename.ext or /news-images/filename.ext
+const getRelativePath = (filePath, fileType = "cover") => {
+  if (!filePath) return null;
+
+  // If it's already a URL, extract the relative path
+  if (filePath.startsWith("http://") || filePath.startsWith("https://")) {
+    try {
+      const url = new URL(filePath);
+      const urlPath = url.pathname;
+      // Extract path after /public/uploads/ or /uploads/
+      const match = urlPath.match(
+        /\/(?:public\/)?uploads\/(cover-images|news-images)\/(.+)$/
+      );
+      if (match) {
+        return `/${match[1]}/${match[2]}`;
+      }
+      // If it's an external URL, return as is
+      return filePath;
+    } catch (error) {
+      // If URL parsing fails, return as is
+      return filePath;
+    }
+  }
+
+  // If it's already a relative path starting with /, return as is
+  if (
+    filePath.startsWith("/cover-images/") ||
+    filePath.startsWith("/news-images/")
+  ) {
+    return filePath;
+  }
+
+  // Extract filename from path
+  const filename = path.basename(filePath);
+
+  // Determine directory based on file type
+  if (fileType === "cover") {
+    return `/cover-images/${filename}`;
+  } else if (fileType === "news") {
+    return `/news-images/${filename}`;
+  }
+
+  return filePath;
+};
+
+// Helper function to get file URL (for responses, not database storage)
 const getFileUrl = (req, filePath) => {
   if (!filePath) return null;
-  
+
   // If it's already a URL, return as is
   if (filePath.startsWith("http://") || filePath.startsWith("https://")) {
     return filePath;
   }
-  
+
   // Construct URL from file path
-  const baseUrl = process.env.BASE_URL || `http://localhost:${process.env.PORT || 3000}`;
-  
+  const baseUrl =
+    process.env.BASE_URL || `http://localhost:${process.env.PORT || 3000}`;
+
   // Normalize the path - ensure it starts with /public/uploads/
   let relativePath = filePath.replace(/\\/g, "/");
-  
+
   // If path doesn't start with /public, add it
   if (!relativePath.startsWith("/public")) {
     // Remove leading slash if present, then add /public/
     relativePath = relativePath.replace(/^\/?/, "/public/");
   }
-  
+
   // Ensure it starts with /
   if (!relativePath.startsWith("/")) {
     relativePath = "/" + relativePath;
   }
-  
+
   return `${baseUrl}${relativePath}`;
 };
 
-// Helper function to extract filename from URL
+// Helper function to extract filename from URL or relative path
 const extractFilenameFromUrl = (url) => {
   if (!url) return null;
-  
+
+  // If it's a relative path like /cover-images/filename.ext or /news-images/filename.ext
+  if (url.startsWith("/cover-images/") || url.startsWith("/news-images/")) {
+    return path.basename(url);
+  }
+
   // If it's not a URL (already a filename), return as is
   if (!url.startsWith("http://") && !url.startsWith("https://")) {
     return url;
   }
-  
+
   try {
     // Extract filename from URL
     const urlPath = new URL(url).pathname;
@@ -168,13 +220,14 @@ const deleteFile = (fileUrl, fileType = "cover") => {
       resolve(false);
       return;
     }
-    
+
     logger.debug(`Attempting to delete file: ${fileUrl}, type: ${fileType}`);
-    
+
     // Skip deletion if it's an external URL (not from our server)
     if (fileUrl.startsWith("http://") || fileUrl.startsWith("https://")) {
       // Check if it's a local file URL
-      const baseUrl = process.env.BASE_URL || `http://localhost:${process.env.PORT || 3000}`;
+      const baseUrl =
+        process.env.BASE_URL || `http://localhost:${process.env.PORT || 3000}`;
       if (!fileUrl.includes(baseUrl) && !fileUrl.includes("localhost")) {
         // External URL, don't delete
         logger.debug(`Skipping deletion - external URL: ${fileUrl}`);
@@ -182,16 +235,16 @@ const deleteFile = (fileUrl, fileType = "cover") => {
         return;
       }
     }
-    
+
     const filename = extractFilenameFromUrl(fileUrl);
     if (!filename) {
       logger.warn(`Could not extract filename from URL: ${fileUrl}`);
       resolve(false);
       return;
     }
-    
+
     logger.debug(`Extracted filename: ${filename}`);
-    
+
     // Determine directory based on file type
     let fileDir;
     if (fileType === "cover") {
@@ -201,10 +254,10 @@ const deleteFile = (fileUrl, fileType = "cover") => {
     } else {
       fileDir = uploadsDir;
     }
-    
+
     const filePath = path.join(fileDir, filename);
     logger.debug(`Full file path: ${filePath}`);
-    
+
     // Check if file exists and delete
     if (fs.existsSync(filePath)) {
       fs.unlink(filePath, (err) => {
@@ -228,7 +281,7 @@ const deleteFiles = async (fileUrls, fileType = "news") => {
   if (!fileUrls || !Array.isArray(fileUrls) || fileUrls.length === 0) {
     return;
   }
-  
+
   const deletePromises = fileUrls.map((url) => deleteFile(url, fileType));
   await Promise.allSettled(deletePromises);
 };
@@ -238,8 +291,8 @@ module.exports = {
   uploadNewsImages,
   uploadFiles,
   getFileUrl,
+  getRelativePath,
   deleteFile,
   deleteFiles,
   extractFilenameFromUrl,
 };
-

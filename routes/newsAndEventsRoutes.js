@@ -21,9 +21,13 @@ const handleFileUpload = (req, res, next) => {
   });
 };
 
-// Public routes (get all and get by ID)
-router.get("/", newsAndEventsController.getAllNewsAndEvents);
-router.get("/:id", newsAndEventsController.getNewsAndEventsById);
+// Public routes (user-side - no authentication required)
+router.get("/public", newsAndEventsController.getActiveNewsAndEvents);
+router.get("/public/:id", newsAndEventsController.getActiveNewsAndEventsById);
+
+// Protected routes (admin-side - require authentication)
+router.get("/", authenticate, newsAndEventsController.getAllNewsAndEvents);
+router.get("/:id", authenticate, newsAndEventsController.getNewsAndEventsById);
 
 // Protected routes (require authentication)
 router.post(
