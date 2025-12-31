@@ -102,20 +102,42 @@ module.exports.findAll = async (filters = {}) => {
                  WHERE 1=1`;
     const params = [];
 
-    if (filters.category_id) {
+    if (
+      filters.category_id !== undefined &&
+      filters.category_id !== null &&
+      filters.category_id !== ""
+    ) {
+      const categoryId = parseInt(filters.category_id, 10);
+      if (isNaN(categoryId)) {
+        throw new Error(`Invalid category_id: ${filters.category_id}`);
+      }
       query += " AND n.category_id = ?";
-      params.push(filters.category_id);
+      params.push(categoryId);
     }
 
-    if (filters.status) {
+    if (
+      filters.status !== undefined &&
+      filters.status !== null &&
+      filters.status !== ""
+    ) {
+      if (typeof filters.status !== "string") {
+        throw new Error(`Invalid status type: ${typeof filters.status}`);
+      }
       query += " AND n.status = ?";
       params.push(filters.status);
     }
 
-    if (filters.search) {
+    if (
+      filters.search !== undefined &&
+      filters.search !== null &&
+      filters.search !== ""
+    ) {
+      if (typeof filters.search !== "string") {
+        throw new Error(`Invalid search type: ${typeof filters.search}`);
+      }
       query +=
         " AND (n.title LIKE ? OR n.description LIKE ? OR n.location LIKE ?)";
-      const searchTerm = `%${filters.search}%`;
+      const searchTerm = `%${filters.search.trim()}%`;
       params.push(searchTerm, searchTerm, searchTerm);
     }
 
@@ -125,11 +147,19 @@ module.exports.findAll = async (filters = {}) => {
       filters.date_from.trim() !== ""
     ) {
       try {
+        const formattedDateFrom = formatDateTimeForMySQL(filters.date_from);
+        if (!formattedDateFrom || typeof formattedDateFrom !== "string") {
+          throw new Error(
+            `formatDateTimeForMySQL returned invalid value: ${formattedDateFrom}`
+          );
+        }
         query += " AND n.date_time >= ?";
-        params.push(formatDateTimeForMySQL(filters.date_from));
+        params.push(formattedDateFrom);
       } catch (error) {
         logger.error("Error formatting date_from:", error);
-        throw new Error(`Invalid date_from format: ${filters.date_from}`);
+        throw new Error(
+          `Invalid date_from format: ${filters.date_from}. ${error.message}`
+        );
       }
     }
 
@@ -139,11 +169,19 @@ module.exports.findAll = async (filters = {}) => {
       filters.date_to.trim() !== ""
     ) {
       try {
+        const formattedDateTo = formatDateTimeForMySQL(filters.date_to);
+        if (!formattedDateTo || typeof formattedDateTo !== "string") {
+          throw new Error(
+            `formatDateTimeForMySQL returned invalid value: ${formattedDateTo}`
+          );
+        }
         query += " AND n.date_time <= ?";
-        params.push(formatDateTimeForMySQL(filters.date_to));
+        params.push(formattedDateTo);
       } catch (error) {
         logger.error("Error formatting date_to:", error);
-        throw new Error(`Invalid date_to format: ${filters.date_to}`);
+        throw new Error(
+          `Invalid date_to format: ${filters.date_to}. ${error.message}`
+        );
       }
     }
 
@@ -168,6 +206,40 @@ module.exports.findAll = async (filters = {}) => {
       }
     }
 
+    // Validate params array - check for undefined/null values and log for debugging
+    const invalidParams = params
+      .map((param, index) =>
+        param === undefined || param === null ? index : null
+      )
+      .filter((index) => index !== null);
+
+    if (invalidParams.length > 0) {
+      logger.error(
+        "Found undefined/null in params array at indices:",
+        invalidParams
+      );
+      logger.error("Full params array:", params);
+      logger.error("Query:", query);
+      throw new Error(
+        `Invalid parameters at indices: ${invalidParams.join(", ")}`
+      );
+    }
+
+    // Count placeholders in query
+    const placeholderCount = (query.match(/\?/g) || []).length;
+    if (placeholderCount !== params.length) {
+      logger.error("Parameter mismatch detected:", {
+        query,
+        params,
+        placeholderCount,
+        paramsLength: params.length,
+      });
+      throw new Error(
+        `Parameter count mismatch: ${placeholderCount} placeholders but ${params.length} parameters`
+      );
+    }
+
+    logger.debug(`Executing query with ${params.length} parameters`);
     const [rows] = await db.execute(query, params);
     return rows;
   } catch (error) {
