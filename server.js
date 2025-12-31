@@ -19,6 +19,8 @@ const allowedOrigins = [
   "http://localhost:3000",
   "http://192.168.1.2:3000",
   "http://16.170.44.123:4000",
+  "https://tccswiss.org",
+  "https://www.tccswiss.org",
 ];
 
 // Simple CORS configuration
