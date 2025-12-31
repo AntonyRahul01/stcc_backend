@@ -30,3 +30,6 @@ Thumbs.db
 dist/
 build/
 
+# Ignore uploaded images
+public/uploads/cover-images/
+public/uploads/news-images/
