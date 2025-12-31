@@ -188,21 +188,24 @@ module.exports.findAll = async (filters = {}) => {
     query += " ORDER BY n.date_time DESC, n.created_at DESC";
 
     // Add pagination
+    // Note: LIMIT and OFFSET must be integers in the query string, not parameters
+    // MySQL2 doesn't support parameterized LIMIT/OFFSET in prepared statements
     if (filters.limit !== undefined && filters.limit !== null) {
       const limit = parseInt(filters.limit, 10);
       if (isNaN(limit) || limit < 1) {
         throw new Error(`Invalid limit value: ${filters.limit}`);
       }
-      query += " LIMIT ?";
-      params.push(limit);
 
       if (filters.offset !== undefined && filters.offset !== null) {
         const offset = parseInt(filters.offset, 10);
         if (isNaN(offset) || offset < 0) {
           throw new Error(`Invalid offset value: ${filters.offset}`);
         }
-        query += " OFFSET ?";
-        params.push(offset);
+        // Use integer values directly in query (safe because we validated them)
+        query += ` LIMIT ${limit} OFFSET ${offset}`;
+      } else {
+        // Use integer value directly in query (safe because we validated it)
+        query += ` LIMIT ${limit}`;
       }
     }
 
