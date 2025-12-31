@@ -7,25 +7,37 @@ const logger = require("../utils/logger");
  * @returns {string} MySQL DATETIME format (e.g., '2025-12-04 07:22:00')
  */
 const formatDateTimeForMySQL = (dateTimeString) => {
-  if (!dateTimeString) {
+  // This function should only be called with valid string values
+  // Return null/undefined as-is only if explicitly passed
+  if (dateTimeString === null || dateTimeString === undefined) {
     return dateTimeString;
   }
 
+  // Ensure it's a string
+  if (typeof dateTimeString !== "string") {
+    throw new Error(
+      `Expected string, got ${typeof dateTimeString}: ${dateTimeString}`
+    );
+  }
+
+  // Trim and check for empty string
+  const trimmed = dateTimeString.trim();
+  if (trimmed === "") {
+    throw new Error("Empty datetime string is not allowed");
+  }
+
   // If already in MySQL format (YYYY-MM-DD HH:MM:SS), return as is
-  if (
-    typeof dateTimeString === "string" &&
-    /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(dateTimeString)
-  ) {
-    return dateTimeString;
+  if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(trimmed)) {
+    return trimmed;
   }
 
   try {
     // Parse the ISO 8601 string
-    const date = new Date(dateTimeString);
+    const date = new Date(trimmed);
 
     // Check if date is valid
     if (isNaN(date.getTime())) {
-      throw new Error(`Invalid date: ${dateTimeString}`);
+      throw new Error(`Invalid date: ${trimmed}`);
     }
 
     // Format as MySQL DATETIME: YYYY-MM-DD HH:MM:SS
@@ -38,13 +50,17 @@ const formatDateTimeForMySQL = (dateTimeString) => {
     const seconds = String(date.getUTCSeconds()).padStart(2, "0");
 
     const formatted = `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
-    logger.debug(`Converted datetime: ${dateTimeString} -> ${formatted}`);
+
+    // Validate the formatted result
+    if (!/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(formatted)) {
+      throw new Error(`Failed to format datetime correctly: ${formatted}`);
+    }
+
+    logger.debug(`Converted datetime: ${trimmed} -> ${formatted}`);
     return formatted;
   } catch (error) {
     logger.error("Error formatting datetime for MySQL:", error);
-    throw new Error(
-      `Invalid datetime format: ${dateTimeString}. ${error.message}`
-    );
+    throw new Error(`Invalid datetime format: ${trimmed}. ${error.message}`);
   }
 };
 
@@ -103,26 +119,52 @@ module.exports.findAll = async (filters = {}) => {
       params.push(searchTerm, searchTerm, searchTerm);
     }
 
-    if (filters.date_from) {
-      query += " AND n.date_time >= ?";
-      params.push(formatDateTimeForMySQL(filters.date_from));
+    if (
+      filters.date_from &&
+      typeof filters.date_from === "string" &&
+      filters.date_from.trim() !== ""
+    ) {
+      try {
+        query += " AND n.date_time >= ?";
+        params.push(formatDateTimeForMySQL(filters.date_from));
+      } catch (error) {
+        logger.error("Error formatting date_from:", error);
+        throw new Error(`Invalid date_from format: ${filters.date_from}`);
+      }
     }
 
-    if (filters.date_to) {
-      query += " AND n.date_time <= ?";
-      params.push(formatDateTimeForMySQL(filters.date_to));
+    if (
+      filters.date_to &&
+      typeof filters.date_to === "string" &&
+      filters.date_to.trim() !== ""
+    ) {
+      try {
+        query += " AND n.date_time <= ?";
+        params.push(formatDateTimeForMySQL(filters.date_to));
+      } catch (error) {
+        logger.error("Error formatting date_to:", error);
+        throw new Error(`Invalid date_to format: ${filters.date_to}`);
+      }
     }
 
     query += " ORDER BY n.date_time DESC, n.created_at DESC";
 
     // Add pagination
-    if (filters.limit) {
+    if (filters.limit !== undefined && filters.limit !== null) {
+      const limit = parseInt(filters.limit, 10);
+      if (isNaN(limit) || limit < 1) {
+        throw new Error(`Invalid limit value: ${filters.limit}`);
+      }
       query += " LIMIT ?";
-      params.push(parseInt(filters.limit));
+      params.push(limit);
 
-      if (filters.offset) {
+      if (filters.offset !== undefined && filters.offset !== null) {
+        const offset = parseInt(filters.offset, 10);
+        if (isNaN(offset) || offset < 0) {
+          throw new Error(`Invalid offset value: ${filters.offset}`);
+        }
         query += " OFFSET ?";
-        params.push(parseInt(filters.offset));
+        params.push(offset);
       }
     }
 
