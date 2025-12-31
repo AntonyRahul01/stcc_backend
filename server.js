@@ -73,30 +73,30 @@ app.get("/", (req, res) => {
     success: true,
     message: "STCC Backend API",
     version: "1.0.0",
-    endpoints: {
-      health: "/api/health",
-      admin: {
-        login: "POST /api/admin/login",
-        register: "POST /api/admin/register",
-        profile: "GET /api/admin/profile",
-        updateProfile: "PUT /api/admin/profile",
-        allAdmins: "GET /api/admin/all",
-      },
-      categories: {
-        getAll: "GET /api/categories",
-        getById: "GET /api/categories/:id",
-        create: "POST /api/categories (Auth required)",
-        update: "PUT /api/categories/:id (Auth required)",
-        delete: "DELETE /api/categories/:id (Auth required)",
-      },
-      newsAndEvents: {
-        getAll: "GET /api/news-and-events",
-        getById: "GET /api/news-and-events/:id",
-        create: "POST /api/news-and-events (Auth required)",
-        update: "PUT /api/news-and-events/:id (Auth required)",
-        delete: "DELETE /api/news-and-events/:id (Auth required)",
-      },
-    },
+    // endpoints: {
+    //   health: "/api/health",
+    //   admin: {
+    //     login: "POST /api/admin/login",
+    //     register: "POST /api/admin/register",
+    //     profile: "GET /api/admin/profile",
+    //     updateProfile: "PUT /api/admin/profile",
+    //     allAdmins: "GET /api/admin/all",
+    //   },
+    //   categories: {
+    //     getAll: "GET /api/categories",
+    //     getById: "GET /api/categories/:id",
+    //     create: "POST /api/categories (Auth required)",
+    //     update: "PUT /api/categories/:id (Auth required)",
+    //     delete: "DELETE /api/categories/:id (Auth required)",
+    //   },
+    //   newsAndEvents: {
+    //     getAll: "GET /api/news-and-events",
+    //     getById: "GET /api/news-and-events/:id",
+    //     create: "POST /api/news-and-events (Auth required)",
+    //     update: "PUT /api/news-and-events/:id (Auth required)",
+    //     delete: "DELETE /api/news-and-events/:id (Auth required)",
+    //   },
+    // },
   });
 });
 
