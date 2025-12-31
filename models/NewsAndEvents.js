@@ -7,29 +7,44 @@ const logger = require("../utils/logger");
  * @returns {string} MySQL DATETIME format (e.g., '2025-12-04 07:22:00')
  */
 const formatDateTimeForMySQL = (dateTimeString) => {
-  if (!dateTimeString) return dateTimeString;
-  
+  if (!dateTimeString) {
+    return dateTimeString;
+  }
+
+  // If already in MySQL format (YYYY-MM-DD HH:MM:SS), return as is
+  if (
+    typeof dateTimeString === "string" &&
+    /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(dateTimeString)
+  ) {
+    return dateTimeString;
+  }
+
   try {
     // Parse the ISO 8601 string
     const date = new Date(dateTimeString);
-    
+
     // Check if date is valid
     if (isNaN(date.getTime())) {
-      throw new Error("Invalid date");
+      throw new Error(`Invalid date: ${dateTimeString}`);
     }
-    
+
     // Format as MySQL DATETIME: YYYY-MM-DD HH:MM:SS
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, "0");
-    const day = String(date.getDate()).padStart(2, "0");
-    const hours = String(date.getHours()).padStart(2, "0");
-    const minutes = String(date.getMinutes()).padStart(2, "0");
-    const seconds = String(date.getSeconds()).padStart(2, "0");
-    
-    return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+    // Use UTC methods to preserve the original timezone
+    const year = date.getUTCFullYear();
+    const month = String(date.getUTCMonth() + 1).padStart(2, "0");
+    const day = String(date.getUTCDate()).padStart(2, "0");
+    const hours = String(date.getUTCHours()).padStart(2, "0");
+    const minutes = String(date.getUTCMinutes()).padStart(2, "0");
+    const seconds = String(date.getUTCSeconds()).padStart(2, "0");
+
+    const formatted = `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+    logger.debug(`Converted datetime: ${dateTimeString} -> ${formatted}`);
+    return formatted;
   } catch (error) {
     logger.error("Error formatting datetime for MySQL:", error);
-    throw new Error(`Invalid datetime format: ${dateTimeString}`);
+    throw new Error(
+      `Invalid datetime format: ${dateTimeString}. ${error.message}`
+    );
   }
 };
 
@@ -82,7 +97,8 @@ module.exports.findAll = async (filters = {}) => {
     }
 
     if (filters.search) {
-      query += " AND (n.title LIKE ? OR n.description LIKE ? OR n.location LIKE ?)";
+      query +=
+        " AND (n.title LIKE ? OR n.description LIKE ? OR n.location LIKE ?)";
       const searchTerm = `%${filters.search}%`;
       params.push(searchTerm, searchTerm, searchTerm);
     }
@@ -136,8 +152,18 @@ module.exports.create = async (newsAndEventsData) => {
       created_by,
     } = newsAndEventsData;
 
+    // Validate date_time is provided
+    if (!date_time) {
+      throw new Error("date_time is required");
+    }
+
     // Convert ISO 8601 datetime to MySQL format
     const formattedDateTime = formatDateTimeForMySQL(date_time);
+
+    // Log for debugging
+    logger.debug(
+      `Original date_time: ${date_time}, Formatted: ${formattedDateTime}`
+    );
 
     const [result] = await db.execute(
       `INSERT INTO news_and_events (category_id, title, description, location, cover_image, date_time, status, created_by, created_at, updated_at)
@@ -155,9 +181,7 @@ module.exports.create = async (newsAndEventsData) => {
     );
 
     const newsAndEvents = await module.exports.findById(result.insertId);
-    logger.info(
-      `News and Events created: ${title} (ID: ${result.insertId})`
-    );
+    logger.info(`News and Events created: ${title} (ID: ${result.insertId})`);
     return newsAndEvents;
   } catch (error) {
     logger.error("Error creating news and events:", error);
@@ -256,8 +280,7 @@ module.exports.delete = async (id) => {
  */
 module.exports.count = async (filters = {}) => {
   try {
-    let query =
-      "SELECT COUNT(*) as total FROM news_and_events WHERE 1=1";
+    let query = "SELECT COUNT(*) as total FROM news_and_events WHERE 1=1";
     const params = [];
 
     if (filters.category_id) {
@@ -271,8 +294,7 @@ module.exports.count = async (filters = {}) => {
     }
 
     if (filters.search) {
-      query +=
-        " AND (title LIKE ? OR description LIKE ? OR location LIKE ?)";
+      query += " AND (title LIKE ? OR description LIKE ? OR location LIKE ?)";
       const searchTerm = `%${filters.search}%`;
       params.push(searchTerm, searchTerm, searchTerm);
     }
@@ -284,4 +306,3 @@ module.exports.count = async (filters = {}) => {
     throw error;
   }
 };
-
